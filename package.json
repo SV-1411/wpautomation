@@ -1,0 +1,20 @@
+{
+  "name": "whatsapp-agent",
+  "version": "1.0.0",
+  "description": "Dental clinic AI receptionist — WhatsApp + web, OpenRouter brain, Google Calendar/Sheets booking",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node demo-server.js",
+    "whatsapp": "node index.js",
+    "start": "node demo-server.js"
+  },
+  "dependencies": {
+    "openai": "^4.104.0",
+    "googleapis": "^144.0.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^17.0.0",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

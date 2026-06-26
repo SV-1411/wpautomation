@@ -1,0 +1,23 @@
+# Render Blueprint for the always-on WhatsApp agent.
+# Free web service + health server keeps the port open. Bookings are simulated (SIMULATE_BOOKINGS).
+services:
+  - type: web
+    name: brightsmile-whatsapp
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false            # set this in the Render dashboard (secret)
+      - key: MODEL
+        value: nvidia/nemotron-3-super-120b-a12b:free
+      - key: SIMULATE_BOOKINGS
+        value: "true"
+      - key: TRIGGER_COMMAND
+        value: /agent
+      - key: CLINIC_NAME
+        value: BrightSmile Dental Clinic
+      - key: CLINIC_TZ
+        value: Asia/Kolkata

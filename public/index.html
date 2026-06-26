@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BrightSmile Dental · AI Receptionist</title>
+<style>
+  :root { --wa:#075e54; --bubble-in:#fff; --bubble-out:#dcf8c6; --bg:#e5ddd5; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#0b141a; min-height:100vh;
+         display:flex; align-items:center; justify-content:center; padding:12px; }
+  .phone { width:410px; max-width:100%; height:94vh; max-height:880px; background:var(--bg);
+           border-radius:28px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); display:flex; flex-direction:column; }
+  header { background:var(--wa); color:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px; }
+  .ava { width:42px; height:42px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; }
+  header .name { font-weight:600; font-size:16px; }
+  header .status { font-size:12px; opacity:.85; }
+  #chat { flex:1; overflow-y:auto; padding:16px 12px; display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; }
+  .row.out { justify-content:flex-end; }
+  .bubble { max-width:80%; padding:8px 11px; border-radius:10px; font-size:14.5px; line-height:1.42; white-space:pre-wrap;
+            box-shadow:0 1px 1px rgba(0,0,0,.12); }
+  .in .bubble { background:var(--bubble-in); border-top-left-radius:2px; }
+  .out .bubble { background:var(--bubble-out); border-top-right-radius:2px; }
+  .time { font-size:10px; color:#667; margin-top:3px; text-align:right; }
+  .typing { font-style:italic; color:#667; font-size:13px; padding:4px 12px; }
+  .quick { display:flex; gap:6px; flex-wrap:wrap; padding:6px 10px; background:#f0f0f0; }
+  .quick button { border:1px solid #ccc; background:#fff; border-radius:16px; padding:6px 11px; font-size:12.5px; cursor:pointer; color:#075e54; }
+  form { display:flex; gap:8px; padding:10px; background:#f0f0f0; }
+  input { flex:1; border:none; border-radius:22px; padding:11px 16px; font-size:15px; outline:none; }
+  .send { border:none; background:#25d366; color:#fff; width:46px; height:46px; border-radius:50%; font-size:20px; cursor:pointer; }
+  .send:disabled { opacity:.5; }
+  .hint { text-align:center; font-size:11px; color:#8aa; padding:4px; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <header>
+      <div class="ava">🦷</div>
+      <div>
+        <div class="name">BrightSmile Dental · Reception</div>
+        <div class="status" id="status">online</div>
+      </div>
+    </header>
+    <div id="chat"></div>
+    <div class="quick" id="quick"></div>
+    <div class="hint">AI receptionist · books real appointments into Google Calendar</div>
+    <form id="f">
+      <input id="m" placeholder="Type a message…" autocomplete="off" />
+      <button class="send" id="send" type="submit">➤</button>
+    </form>
+  </div>
+<script>
+  // Frontend holds the conversation; backend is stateless (Vercel-friendly).
+  let history = [];
+  const chat = document.getElementById("chat");
+  const form = document.getElementById("f");
+  const input = document.getElementById("m");
+  const send = document.getElementById("send");
+  const status = document.getElementById("status");
+  const quick = document.getElementById("quick");
+
+  function now(){const d=new Date();return d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0");}
+  function bubble(text, who){
+    const row=document.createElement("div"); row.className="row "+who;
+    row.innerHTML='<div class="bubble">'+text.replace(/</g,"&lt;")+'<div class="time">'+now()+'</div></div>';
+    chat.appendChild(row); chat.scrollTop=chat.scrollHeight;
+  }
+  let typingEl;
+  function typing(on){
+    status.textContent=on?"typing…":"online";
+    if(on&&!typingEl){typingEl=document.createElement("div");typingEl.className="typing";typingEl.textContent="typing…";chat.appendChild(typingEl);chat.scrollTop=chat.scrollHeight;}
+    if(!on&&typingEl){typingEl.remove();typingEl=null;}
+  }
+  async function sendText(text){
+    bubble(text,"out"); history.push({role:"user",content:text});
+    send.disabled=true; typing(true);
+    try{
+      const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history})});
+      const data=await r.json();
+      typing(false);
+      if(data.messages) history=data.messages.filter(m=>m.role==="user"||m.role==="assistant"||m.role==="tool");
+      bubble(data.reply||"⚠️ "+(data.error||"error"),"in");
+    }catch(e){typing(false); bubble("⚠️ connection error","in");}
+    send.disabled=false; input.focus();
+  }
+  form.addEventListener("submit",e=>{e.preventDefault();const t=input.value.trim();if(!t)return;input.value="";sendText(t);});
+  ["I need a teeth cleaning","Do you do whitening?","Tooth pain — emergency!","What are your hours?"]
+    .forEach(q=>{const b=document.createElement("button");b.textContent=q;b.onclick=()=>sendText(q);quick.appendChild(b);});
+
+  bubble("👋 Hi! Welcome to BrightSmile Dental. I'm the reception assistant — I can answer questions and book your appointment right here. How can I help?","in");
+  input.focus();
+</script>
+</body>
+</html>
