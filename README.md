@@ -86,14 +86,46 @@ Calendar event** and appends a **row in the Sheet**. To put it live, add the sam
 
 ## 4. Run it on real WhatsApp (number 9623688451)
 
+The WhatsApp bot is **gated** and **simulates bookings** (never writes to the real
+calendar/sheet — set in `index.js`). It stays SILENT until a chat sends the trigger:
+
+- `/agent` → activates the receptionist for that chat (greets, then chats + books-in-demo)
+- `/stop`  → deactivates for that chat
+- `/reset` → clears that chat's memory
+
+So your normal contacts who text you get **no** bot reply — only people who send `/agent`.
+
+### Run locally
 ```powershell
 npm run whatsapp     # prints a QR
 ```
-Scan with the phone holding that number: WhatsApp → **Linked devices → Link a device**.
-Now patients messaging that number get the receptionist (same Google booking). Keep the
-window open — for 24/7, host it on Railway/Render/a cheap VPS (Vercel can't run this).
+Scan with the phone holding the number: WhatsApp → **Linked devices → Link a device**.
+Then from another phone, message the number and send `/agent` to start.
 
-Send `/reset` in a chat to clear that conversation's memory.
+### Always-on on Render
+1. Push this repo to GitHub: `gh auth login` then
+   `gh repo create brightsmile-whatsapp --private --source=. --push`
+2. On [render.com](https://render.com) → **New → Web Service** → connect the repo. It reads
+   `render.yaml` automatically (free plan, `node index.js`, health check `/`).
+3. Add the secret env var **OPENROUTER_API_KEY** in the Render dashboard (the rest come from
+   `render.yaml`: MODEL, SIMULATE_BOOKINGS=true, TRIGGER_COMMAND=/agent, CLINIC_*).
+4. Deploy → open **Logs** → an ASCII **QR** prints → scan it with the number's phone.
+5. Keep it awake: add a free monitor at [cron-job.org](https://cron-job.org) /
+   [uptimerobot.com](https://uptimerobot.com) pinging your Render URL every 10 min.
+
+> Free Render caveat: ephemeral disk → after a restart/redeploy you must re-scan the QR.
+> Add a Render **persistent disk** (~$1/mo) mounted at `/opt/render/project/src/auth`, or run
+> on your own PC (below), to avoid re-scanning.
+
+### Always-on on your own PC ($0, no re-scan)
+```powershell
+npm i -g pm2
+cd D:\whatsapp-agent
+pm2 start index.js --name whatsapp-agent
+pm2 save
+pm2 startup     # follow the printed line so it auto-starts with Windows
+```
+Auth persists on local disk, so crashes/restarts reconnect without a new QR.
 
 ---
 
