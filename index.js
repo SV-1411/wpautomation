@@ -11,6 +11,7 @@ import {
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
+import QRCode from "qrcode";
 import pino from "pino";
 import "dotenv/config";
 import { runAgent } from "./lib/brain.js";
@@ -21,10 +22,20 @@ const logger = pino({ level: "warn" });
 
 const histories = new Map(); // jid -> messages[] (without system)
 const active = new Set();     // jids currently engaged with the agent
+let latestQR = null;          // current pairing QR string
+let connected = false;
 
-// ── tiny health server so Render sees an open port + uptime pingers keep us awake ──
-http.createServer((req, res) => { res.writeHead(200); res.end("ok"); })
-  .listen(process.env.PORT || 3000, () => console.log("health server on", process.env.PORT || 3000));
+// ── health + scannable-QR server. Open <url>/qr in a browser to link WhatsApp. ──
+http.createServer(async (req, res) => {
+  if (req.url === "/qr") {
+    if (connected) { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<body style='font-family:sans-serif;text-align:center;padding:40px'><h2>✅ WhatsApp is connected</h2></body>"); }
+    if (!latestQR) { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<meta http-equiv=refresh content=3><body style='font-family:sans-serif;text-align:center;padding:40px'><h2>Starting… waiting for QR</h2><p>This page refreshes automatically.</p></body>"); }
+    const img = await QRCode.toDataURL(latestQR, { width: 320, margin: 2 });
+    res.writeHead(200, { "Content-Type": "text/html" });
+    return res.end(`<!doctype html><meta http-equiv=refresh content=8><body style="font-family:sans-serif;text-align:center;padding:30px"><h2>Scan with WhatsApp</h2><p>WhatsApp → ⋮ → Linked devices → Link a device</p><img src="${img}" width="320" height="320"/><p style="color:#888">Page auto-refreshes; always scan the latest code.</p></body>`);
+  }
+  res.writeHead(200); res.end("ok");
+}).listen(process.env.PORT || 3000, () => console.log("health+QR server on", process.env.PORT || 3000, "— open /qr to scan"));
 
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
@@ -35,11 +46,13 @@ async function start() {
   sock.ev.on("connection.update", (u) => {
     const { connection, lastDisconnect, qr } = u;
     if (qr) {
-      console.log("\n📲 Scan in WhatsApp → Linked devices → Link a device:\n");
-      qrcode.generate(qr, { small: true });
+      latestQR = qr;
+      console.log("\n📲 QR ready — open  <your-render-url>/qr  in a browser to scan it.\n");
+      qrcode.generate(qr, { small: true }); // also print ASCII (works in a real terminal)
     }
-    if (connection === "open") console.log(`✅ Connected. Agent waits for "${TRIGGER}" before replying.`);
+    if (connection === "open") { connected = true; latestQR = null; console.log(`✅ Connected. Agent waits for "${TRIGGER}" before replying.`); }
     if (connection === "close") {
+      connected = false;
       const code = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       console.log(`⚠️  closed (${code}).` + (loggedOut ? " Delete ./auth and rescan." : " Reconnecting…"));
