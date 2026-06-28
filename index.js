@@ -84,6 +84,8 @@ async function start() {
       connected = false;
       const code = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
+      // If still unpaired, let the next start() mint a FRESH pairing code (old ones expire).
+      if (!sock.authState.creds.registered) { pairingAsked = false; pairingCode = null; }
       console.log(`⚠️  closed (${code}).` + (loggedOut ? " Delete ./auth and rescan." : " Reconnecting…"));
       if (!loggedOut) start();
     }
