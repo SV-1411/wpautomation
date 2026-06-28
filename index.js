@@ -27,6 +27,17 @@ let latestQR = null;          // current pairing QR string
 let pairingCode = null;       // 8-char "link with phone number" code
 let connected = false;
 let pairingAsked = false;
+let currentSock = null;       // live socket, so the watchdog can recycle it for a fresh code
+
+// Watchdog: while unpaired, recycle the socket every ~100s so the displayed code never expires.
+setInterval(() => {
+  try {
+    if (!connected && PAIR_NUMBER && currentSock && !currentSock.authState?.creds?.registered) {
+      console.log("♻️  refreshing pairing code…");
+      currentSock.end(new Error("refresh-pairing"));
+    }
+  } catch {}
+}, 100000);
 
 const page = (inner, refresh = true) =>
   `<!doctype html>${refresh ? "<meta http-equiv=refresh content=8>" : ""}<body style="font-family:sans-serif;text-align:center;padding:30px">${inner}</body>`;
@@ -59,6 +70,7 @@ async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({ version, auth: state, logger });
+  currentSock = sock;
 
   // Pairing code: type an 8-char code into WhatsApp instead of scanning a QR (much more reliable).
   if (PAIR_NUMBER && !sock.authState.creds.registered && !pairingAsked) {
