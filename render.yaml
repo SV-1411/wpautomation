@@ -17,6 +17,8 @@ services:
         value: "true"
       - key: TRIGGER_COMMAND
         value: /agent
+      - key: PAIR_NUMBER
+        value: "919623688451"
       - key: CLINIC_NAME
         value: BrightSmile Dental Clinic
       - key: CLINIC_TZ

@@ -22,17 +22,35 @@ const logger = pino({ level: "warn" });
 
 const histories = new Map(); // jid -> messages[] (without system)
 const active = new Set();     // jids currently engaged with the agent
+const PAIR_NUMBER = (process.env.PAIR_NUMBER || "").replace(/[^0-9]/g, ""); // e.g. 919623688451
 let latestQR = null;          // current pairing QR string
+let pairingCode = null;       // 8-char "link with phone number" code
 let connected = false;
+let pairingAsked = false;
 
-// ── health + scannable-QR server. Open <url>/qr in a browser to link WhatsApp. ──
+const page = (inner, refresh = true) =>
+  `<!doctype html>${refresh ? "<meta http-equiv=refresh content=8>" : ""}<body style="font-family:sans-serif;text-align:center;padding:30px">${inner}</body>`;
+
+// ── health + pairing server. Open <url>/qr in a browser to link WhatsApp. ──
 http.createServer(async (req, res) => {
   if (req.url === "/qr") {
-    if (connected) { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<body style='font-family:sans-serif;text-align:center;padding:40px'><h2>✅ WhatsApp is connected</h2></body>"); }
-    if (!latestQR) { res.writeHead(200, { "Content-Type": "text/html" }); return res.end("<meta http-equiv=refresh content=3><body style='font-family:sans-serif;text-align:center;padding:40px'><h2>Starting… waiting for QR</h2><p>This page refreshes automatically.</p></body>"); }
-    const img = await QRCode.toDataURL(latestQR, { width: 320, margin: 2 });
-    res.writeHead(200, { "Content-Type": "text/html" });
-    return res.end(`<!doctype html><meta http-equiv=refresh content=8><body style="font-family:sans-serif;text-align:center;padding:30px"><h2>Scan with WhatsApp</h2><p>WhatsApp → ⋮ → Linked devices → Link a device</p><img src="${img}" width="320" height="320"/><p style="color:#888">Page auto-refreshes; always scan the latest code.</p></body>`);
+    const head = { "Content-Type": "text/html" };
+    if (connected) { res.writeHead(200, head); return res.end(page("<h2>✅ WhatsApp is connected</h2>", false)); }
+    // Prefer the pairing CODE — far easier than scanning a screen QR.
+    if (pairingCode) {
+      const c = pairingCode.length === 8 ? pairingCode.slice(0, 4) + "-" + pairingCode.slice(4) : pairingCode;
+      return res.writeHead(200, head), res.end(page(
+        `<h2>Link with your phone number</h2>
+         <p>On the <b>${PAIR_NUMBER || "agent"}</b> phone open WhatsApp →<br>⋮ / Settings → <b>Linked devices</b> → <b>Link a device</b> → <b>Link with phone number instead</b></p>
+         <div style="font-size:42px;font-weight:700;letter-spacing:6px;margin:24px;font-family:monospace">${c}</div>
+         <p style="color:#888">Type this code into WhatsApp. Page auto-refreshes.</p>`));
+    }
+    if (latestQR) {
+      const img = await QRCode.toDataURL(latestQR, { width: 360, margin: 4, errorCorrectionLevel: "L" });
+      return res.writeHead(200, head), res.end(page(
+        `<h2>Scan with WhatsApp</h2><p>Linked devices → Link a device</p><img src="${img}" width="360" height="360"/>`));
+    }
+    res.writeHead(200, head); return res.end(page("<h2>Starting… generating code</h2><p>Refreshing…</p>"));
   }
   res.writeHead(200); res.end("ok");
 }).listen(process.env.PORT || 3000, () => console.log("health+QR server on", process.env.PORT || 3000, "— open /qr to scan"));
@@ -41,6 +59,17 @@ async function start() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({ version, auth: state, logger });
+
+  // Pairing code: type an 8-char code into WhatsApp instead of scanning a QR (much more reliable).
+  if (PAIR_NUMBER && !sock.authState.creds.registered && !pairingAsked) {
+    pairingAsked = true;
+    setTimeout(async () => {
+      try {
+        pairingCode = await sock.requestPairingCode(PAIR_NUMBER);
+        console.log(`\n🔢 Pairing code for ${PAIR_NUMBER}: ${pairingCode}  — enter it in WhatsApp → Linked devices → Link with phone number.\n`);
+      } catch (e) { console.log("pairing code error:", e?.message || e); pairingAsked = false; }
+    }, 3000);
+  }
 
   sock.ev.on("creds.update", saveCreds);
   sock.ev.on("connection.update", (u) => {
