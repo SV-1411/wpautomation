@@ -11,6 +11,12 @@ services:
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false            # set this in the Render dashboard (secret)
+      - key: GOOGLE_CLIENT_EMAIL
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY_B64
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
       - key: MODEL
         value: nvidia/nemotron-3-super-120b-a12b:free
       - key: SIMULATE_BOOKINGS

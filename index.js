@@ -15,6 +15,7 @@ import QRCode from "qrcode";
 import pino from "pino";
 import "dotenv/config";
 import { runAgent } from "./lib/brain.js";
+import { backupSession, clearSessionBackup, restoreSession } from "./lib/session-store.js";
 
 const TRIGGER = (process.env.TRIGGER_COMMAND || "/agent").toLowerCase();
 const ALLOWLIST = (process.env.ALLOWLIST || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -28,6 +29,13 @@ let pairingCode = null;       // 8-char "link with phone number" code
 let connected = false;
 let pairingAsked = false;
 let currentSock = null;       // live socket, so the watchdog can recycle it for a fresh code
+let backupTimer = null;
+const AUTH_DIR = "auth";
+let sessionRestored = false;
+
+setInterval(() => {
+  if (connected) backupSession(AUTH_DIR).catch((error) => console.error("session backup error:", error?.message || error));
+}, 30000);
 
 // Watchdog: while unpaired, recycle the socket every ~100s so the displayed code never expires.
 setInterval(() => {
@@ -67,7 +75,11 @@ http.createServer(async (req, res) => {
 }).listen(process.env.PORT || 3000, () => console.log("health+QR server on", process.env.PORT || 3000, "— open /qr to scan"));
 
 async function start() {
-  const { state, saveCreds } = await useMultiFileAuthState("auth");
+  if (!sessionRestored) {
+    sessionRestored = true;
+    await restoreSession(AUTH_DIR).catch((error) => console.error("session restore error:", error?.message || error));
+  }
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({ version, auth: state, logger });
   currentSock = sock;
@@ -83,7 +95,13 @@ async function start() {
     }, 3000);
   }
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    clearTimeout(backupTimer);
+    backupTimer = setTimeout(() => {
+      backupSession(AUTH_DIR).catch((error) => console.error("session backup error:", error?.message || error));
+    }, 3000);
+  });
   sock.ev.on("connection.update", (u) => {
     const { connection, lastDisconnect, qr } = u;
     if (qr) {
